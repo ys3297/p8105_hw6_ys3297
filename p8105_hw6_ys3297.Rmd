@@ -125,3 +125,5 @@ odds_ratio_city_plot
 ```
 
 From the above plot, we can see that the estimated OR for solving homicides comparing black victims to white victims for most cities in our prepared dataset was below the null value 1, and none of these ORs could be concluded to be statistically significantly greater than 1, while many of them were statistically significantly smaller than 1, at a significance level of 0.05.
+
+## Problem 2
