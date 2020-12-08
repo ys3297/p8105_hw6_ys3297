@@ -10,7 +10,6 @@ Solution to HW6.
 library(tidyverse)
 library(modelr)
 library(purrr)
-library(p8105.datasets)
 
 knitr::opts_chunk$set(
 	fig.width = 10, 
@@ -31,7 +30,7 @@ options(
 scale_colour_discrete = scale_colour_viridis_d
 scale_fill_discrete = scale_fill_viridis_d
 
-set.seed(1)
+set.seed(2)
 ```
 
 ## Problem 1
@@ -66,13 +65,16 @@ baltimore_df =
   filter(city_state == "Baltimore, MD") %>% 
   mutate(victim_race = fct_relevel(victim_race, "White", "Black"))
 
-baltimore_results = 
+baltimore_glm = 
   glm(
     resolution ~ victim_age + victim_race + victim_sex, 
     data = baltimore_df,
     family = binomial()
   ) %>% 
-  broom::tidy() %>% 
+  broom::tidy()
+
+baltimore_results = 
+  baltimore_glm %>% 
   mutate(
     odds_ratio = exp(estimate),
     CI_lower = exp(estimate - 1.96 * std.error),
@@ -94,7 +96,7 @@ cities_results_df =
   nest(data = -city_state) %>% 
   mutate(
     models = 
-      map(.x = data, ~glm(resolution ~ victim_age + victim_race + victim_sex, data = .x, family = binomial())), 
+      map(.x = data, ~ glm(resolution ~ victim_age + victim_race + victim_sex, data = .x, family = binomial())),
     results = map(models, broom::tidy)
   ) %>% 
   select(city_state, results) %>% 
@@ -191,14 +193,14 @@ cross_validation_df =
     test = map(test, as_tibble)
   ) %>% 
   mutate(
-    lm1 = map(.x = train, ~lm(bwt ~ gaweeks + momage + parity, data = .x)),
-    lm2 = map(.x = train, ~lm(bwt ~ blength + gaweeks, data = .x)),
-    lm3 = map(.x = train, ~lm(bwt ~ bhead * blength * babysex, data = .x)),
+    lm1 = map(.x = train, ~ lm(bwt ~ gaweeks + momage + parity, data = .x)),
+    lm2 = map(.x = train, ~ lm(bwt ~ blength + gaweeks, data = .x)),
+    lm3 = map(.x = train, ~ lm(bwt ~ bhead * blength * babysex, data = .x)),
   ) %>% 
   mutate(
-    rmse_lm1 = map2_dbl(.x = lm1, .y = test, ~rmse(model = .x, data = .y)),
-    rmse_lm2 = map2_dbl(.x = lm2, .y = test, ~rmse(model = .x, data = .y)),
-    rmse_lm3 = map2_dbl(.x = lm3, .y = test, ~rmse(model = .x, data = .y))
+    rmse_lm1 = map2_dbl(.x = lm1, .y = test, ~ rmse(model = .x, data = .y)),
+    rmse_lm2 = map2_dbl(.x = lm2, .y = test, ~ rmse(model = .x, data = .y)),
+    rmse_lm3 = map2_dbl(.x = lm3, .y = test, ~ rmse(model = .x, data = .y))
   )
 
 rmse_dist = 
@@ -222,3 +224,126 @@ rmse_dist
 ```
 
 According to the distribution of RMSE values for each candidate model, in general, Model 3 has the smallest RMSE, followed by Model 2, and my model has the greatest RMSE. This indicates that Model 3 may be the best model while my model may be the worst model for prediction of birth weight among these 3 models.
+
+## Problem 3
+
+Download the data.
+
+```{r}
+weather_df = 
+  rnoaa::meteo_pull_monitors(
+    c("USW00094728"),
+    var = c("PRCP", "TMIN", "TMAX"), 
+    date_min = "2017-01-01",
+    date_max = "2017-12-31") %>%
+  mutate(
+    name = recode(id, USW00094728 = "CentralPark_NY"),
+    tmin = tmin / 10,
+    tmax = tmax / 10) %>%
+  select(name, id, everything())
+```
+
+Use 5000 bootstrap samples and, for each bootstrap sample, produce estimates of r-squared and log(beta_0 * beta_1) for a simple linear regression with `tmax` as the response and `tmin` as the predictor.
+
+```{r}
+weather_bootstrap = 
+  weather_df %>% 
+  bootstrap(n = 5000) %>% 
+  mutate(
+    models = map(.x = strap, ~ lm(tmax ~ tmin, data = .x)),
+    results_rsq = map(models, broom::glance),
+    results_log = map(models, broom::tidy),
+  ) %>% 
+  janitor::clean_names()
+
+rsq_df = 
+  weather_bootstrap %>% 
+  select(id, results_rsq) %>% 
+  unnest(results_rsq) %>% 
+  janitor::clean_names() %>% 
+  select(id, r_squared)
+
+log_df = 
+  weather_bootstrap %>% 
+  select(id, results_log) %>% 
+  unnest(results_log) %>% 
+  select(id, term, estimate) %>% 
+  pivot_wider(
+    id_cols = id,
+    names_from = term,
+    values_from = estimate
+  ) %>% 
+  janitor::clean_names() %>% 
+  mutate(
+    log_b0_b1 = log(intercept * tmin)
+  ) %>% 
+  select(id, log_b0_b1)
+```
+
+Plot the distribution of these 2 quantities.
+
+```{r}
+rsq_dist = 
+  rsq_df %>% 
+  ggplot(aes(x = r_squared)) + 
+  geom_density() +
+  labs(
+    title = "Distribution of R-Squared",
+    x = "R-Squared",
+    y = "Density"
+  )
+
+rsq_dist
+```
+
+The distribution of r-squared is unimodal and a little left-skewed with a peak around 0.91.
+
+```{r}
+log_dist = 
+  log_df %>% 
+  ggplot(aes(x = log_b0_b1)) + 
+  geom_density() +
+  labs(
+    title = "Distribution of log(beta_0 * beta_1)",
+    x = "log(beta_0 * beta_1)",
+    y = "Density"
+  )
+
+log_dist
+```
+
+The distribution of log(beta_0 * beta_1) is approximately symmetric and unimodal with a peak around 2.02.  
+
+Using the 5000 bootstrap estimates, identify the 2.5% and 97.5% quantiles to provide a 95% confidence interval for estimated r-squared and log(beta_0 * beta_1).  
+
+95% confidence interval for estimated r-squared:
+ 
+```{r}
+rsq_ci = 
+  rsq_df %>% 
+  summarize(
+    ci_lower = quantile(r_squared, 0.025),
+    ci_upper = quantile(r_squared, 0.975)
+  ) %>% 
+  knitr::kable(digits = 3)
+
+rsq_ci
+```
+
+The 95% confidence interval for estimated r-squared is (0.894, 0.927).  
+
+95% confidence interval for estimated log(beta_0 * beta_1):
+ 
+```{r}
+log_ci = 
+  log_df %>% 
+  summarize(
+    ci_lower = quantile(log_b0_b1, 0.025),
+    ci_upper = quantile(log_b0_b1, 0.975)
+  ) %>% 
+  knitr::kable(digits = 3)
+
+log_ci
+```
+
+The 95% confidence interval for estimated log(beta_0 * beta_1) is (1.963, 2.059).
