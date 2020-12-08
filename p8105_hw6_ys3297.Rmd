@@ -176,6 +176,8 @@ residuals_fitted =
 residuals_fitted
 ```
 
+In the above plot, residuals are left-skewed for fitted values under 2000, right-skewed for fitted values over 3500, and more evenly distributed on both sides of 0 for fitted values from 2000 to 3500.  
+
 Third, compare my model to two other models by :
 
 * One using length at birth and gestational age as predictors (main effects only) (Model 2)
